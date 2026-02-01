@@ -1,0 +1,12 @@
+[project]
+name = "pcb-viewer"
+version = "0.1.0"
+description = "PCB Viewer with Pick and Place component highlighting"
+requires-python = ">=3.10"
+dependencies = [
+    "PySide6>=6.6.0",
+    "gerbonara>=1.4.0",
+]
+
+[project.scripts]
+pcb-viewer = "pcb_viewer.main:main"
