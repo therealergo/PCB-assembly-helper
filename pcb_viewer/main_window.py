@@ -14,6 +14,8 @@ from PySide6.QtWidgets import (
     QLabel,
     QMessageBox,
     QGroupBox,
+    QSlider,
+    QSizePolicy,
 )
 
 from .models import Component, BoundsMM, Side
@@ -63,6 +65,12 @@ class MainWindow(QMainWindow):
         self._zoom_fit_btn = QPushButton("Zoom to Fit")
         toolbar.addWidget(self._zoom_fit_btn)
 
+        toolbar.addWidget(QLabel("  Marker Size: "))
+        self._marker_size_slider = QSlider(Qt.Orientation.Horizontal)
+        self._marker_size_slider.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
+        self._marker_size_slider.setValue(50)
+        toolbar.addWidget(self._marker_size_slider)
+
         central = QWidget()
         self.setCentralWidget(central)
         layout = QHBoxLayout(central)
@@ -101,6 +109,7 @@ class MainWindow(QMainWindow):
         self._table_view.selectionModel().selectionChanged.connect(
             self._on_table_selection_changed
         )
+        self._marker_size_slider.valueChanged.connect(self._on_marker_size_changed)
 
     def _on_load_gerber(self):
         folder = QFileDialog.getExistingDirectory(
@@ -180,3 +189,7 @@ class MainWindow(QMainWindow):
 
         designators = [c.designator for c in group.components]
         self._pcb_view.highlight_components(designators)
+
+    def _on_marker_size_changed(self, new_value):
+        val_lin = ((new_value + 20.0) / 140.0) * 2.0
+        self._pcb_view.set_marker_size(val_lin * val_lin)

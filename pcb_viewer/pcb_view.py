@@ -1,4 +1,6 @@
-from PySide6.QtCore import Qt, QRectF, QTimer, QPointF, QLineF
+import math
+
+from PySide6.QtCore import Qt, QRectF, QTimer, QElapsedTimer, QPointF, QLineF
 from PySide6.QtGui import QPen, QBrush, QColor, QWheelEvent, QMouseEvent, QPainter
 from PySide6.QtWidgets import QGraphicsView, QGraphicsScene, QGraphicsEllipseItem, QGraphicsTextItem, QGraphicsItemGroup, QGraphicsLineItem
 from PySide6.QtSvgWidgets import QGraphicsSvgItem
@@ -8,21 +10,21 @@ from .models import Component, BoundsMM, Side
 
 
 class PulsingMarker(QGraphicsItemGroup):
-    def __init__(self, center_x: float, center_y: float, base_radius: float = 4.0):
+    def __init__(self, center_x: float, center_y: float, marker_size: float, marker_size_mult: float, designator: str):
         super().__init__()
         self._center = QPointF(center_x, center_y)
-        self._base_radius = base_radius
-        self._min_radius = base_radius
-        self._max_radius = base_radius * 2.0
-        self._current_radius = base_radius
-        self._growing = True
+        self._center_x = center_x
+        self._center_y = center_y
+        self._marker_size = marker_size
+        self._marker_size_mult = marker_size_mult
+        self._designator = designator
         
         self._circle = QGraphicsEllipseItem()
-        self._circle.setPen(QPen(QColor("#ff0000"), 1.0))
+        self._circle.setPen(QPen(QColor("#ff0000"), marker_size))
         self._circle.setBrush(QBrush(QColor(255, 255, 0, 80)))
         self.addToGroup(self._circle)
         
-        crosshair_pen = QPen(QColor("#ff0000"), 1.0)
+        crosshair_pen = QPen(QColor("#ff0000"), marker_size)
         self._h_line = QGraphicsLineItem()
         self._h_line.setPen(crosshair_pen)
         self.addToGroup(self._h_line)
@@ -34,9 +36,16 @@ class PulsingMarker(QGraphicsItemGroup):
         self.setZValue(15)
         self._update_geometry()
 
+        self._label = QGraphicsTextItem(designator)
+        self._label.setDefaultTextColor(QColor("#ffff00"))
+        self._label.setScale(marker_size)
+        self._label.setPos(center_x + 5.0 * marker_size, center_y - 12.5 * marker_size)
+        self._label.setZValue(20)
+        self.addToGroup(self._label)
+
     def _update_geometry(self):
         cx, cy = self._center.x(), self._center.y()
-        r = self._current_radius
+        r = self._marker_size * 4.0 * self._marker_size_mult
         
         self._circle.setRect(cx - r, cy - r, r * 2, r * 2)
         
@@ -44,16 +53,8 @@ class PulsingMarker(QGraphicsItemGroup):
         self._h_line.setLine(cx - crosshair_size, cy, cx + crosshair_size, cy)
         self._v_line.setLine(cx, cy - crosshair_size, cx, cy + crosshair_size)
 
-    def pulse_step(self):
-        step = 0.5
-        if self._growing:
-            self._current_radius += step
-            if self._current_radius >= self._max_radius:
-                self._growing = False
-        else:
-            self._current_radius -= step
-            if self._current_radius <= self._min_radius:
-                self._growing = True
+    def pulse_step(self, marker_size_mult):
+        self._marker_size_mult = marker_size_mult
         self._update_geometry()
 
 
@@ -76,20 +77,25 @@ class PCBView(QGraphicsView):
         self._svg_renderer: QSvgRenderer | None = None
         self._component_positions: dict[str, tuple[float, float]] = {}
         self._highlight_markers: list[PulsingMarker] = []
-        self._highlight_labels: list[QGraphicsTextItem] = []
         self._bounds: BoundsMM | None = None
         self._current_side: Side = Side.TOP
         self._zoom_factor = 1.0
         self._svg_viewbox: tuple[float, float, float, float] | None = None
         self._item_bounds: tuple[float, float, float, float] = (0, 0, 1, 1)
+        self._marker_size = 0.5
+        self._marker_size_mult = 1.0
 
+        self._pulse_timer_elapsed = QElapsedTimer()
         self._pulse_timer = QTimer(self)
         self._pulse_timer.timeout.connect(self._on_pulse_tick)
         self._pulse_timer.setInterval(30)
+        self._pulse_timer.start()
+        self._pulse_timer_elapsed.start()
 
     def _on_pulse_tick(self):
+        self._marker_size_mult = math.sin(self._pulse_timer_elapsed.elapsed() / 300.0) * 0.3 + 1.0
         for marker in self._highlight_markers:
-            marker.pulse_step()
+            marker.pulse_step(self._marker_size_mult)
 
     def set_board_svg(self, svg_data: bytes, bounds: BoundsMM):
         self._bounds = bounds
@@ -152,33 +158,22 @@ class PCBView(QGraphicsView):
                 if first_pos is None:
                     first_pos = pos
 
-                marker = PulsingMarker(svg_x, svg_y, base_radius=4.0)
+                marker = PulsingMarker(
+                    svg_x, 
+                    svg_y, 
+                    self._marker_size, 
+                    self._marker_size_mult, 
+                    designator)
                 self._scene.addItem(marker)
                 self._highlight_markers.append(marker)
-
-                label = QGraphicsTextItem(designator)
-                label.setDefaultTextColor(QColor("#ffff00"))
-                label.setPos(svg_x + 10, svg_y - 10)
-                label.setZValue(20)
-                self._scene.addItem(label)
-                self._highlight_labels.append(label)
-
-        if self._highlight_markers:
-            self._pulse_timer.start()
 
         if first_pos:
             self.centerOn(QPointF(first_pos[0], first_pos[1]))
 
     def clear_highlights(self):
-        self._pulse_timer.stop()
-
         for marker in self._highlight_markers:
             self._scene.removeItem(marker)
         self._highlight_markers.clear()
-
-        for label in self._highlight_labels:
-            self._scene.removeItem(label)
-        self._highlight_labels.clear()
 
     def zoom_to_fit(self):
         self.fitInView(self._scene.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)
@@ -195,3 +190,17 @@ class PCBView(QGraphicsView):
 
         self._zoom_factor *= zoom_factor
         self.scale(zoom_factor, zoom_factor)
+
+    def set_marker_size(self, _marker_size):
+        self._marker_size = _marker_size
+        highlight_markers_clone = self._highlight_markers[:]
+        self.clear_highlights()
+        for highlight_marker in highlight_markers_clone:
+            marker = PulsingMarker(
+                highlight_marker._center_x, 
+                highlight_marker._center_y, 
+                _marker_size, 
+                highlight_marker._marker_size_mult, 
+                highlight_marker._designator)
+            self._scene.addItem(marker)
+            self._highlight_markers.append(marker)
