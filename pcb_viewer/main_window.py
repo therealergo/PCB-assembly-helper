@@ -143,6 +143,7 @@ class MainWindow(QMainWindow):
             self._status_label.setText(
                 f"Loaded {len(self._components)} components from: {file_path}"
             )
+            self._table_view.resizeColumnsToContents()
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to load Pick & Place: {e}")
 

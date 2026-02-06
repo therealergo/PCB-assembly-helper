@@ -107,5 +107,5 @@ class ComponentsTableView(QTableView):
         self.setAlternatingRowColors(True)
         self.setSortingEnabled(True)
         self.horizontalHeader().setStretchLastSection(True)
-        self.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+        self.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         self.verticalHeader().setVisible(False)
